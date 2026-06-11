@@ -1,2 +1,0 @@
-[console_scripts]
-upnote-to-apple-notes = upnote_to_apple_notes.cli:main

@@ -1,9 +1,0 @@
-pyproject.toml
-src/upnote_to_apple_notes/__init__.py
-src/upnote_to_apple_notes/cli.py
-src/upnote_to_apple_notes.egg-info/PKG-INFO
-src/upnote_to_apple_notes.egg-info/SOURCES.txt
-src/upnote_to_apple_notes.egg-info/dependency_links.txt
-src/upnote_to_apple_notes.egg-info/entry_points.txt
-src/upnote_to_apple_notes.egg-info/top_level.txt
-tests/test_cli_smoke.py
