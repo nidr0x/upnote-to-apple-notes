@@ -5,7 +5,7 @@ import argparse
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="upnote-to-apple-notes")
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
     for command in ("discover", "extract", "import", "resume", "report"):
         subparsers.add_parser(command)
