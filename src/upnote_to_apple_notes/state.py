@@ -84,6 +84,8 @@ def should_import_note(
 
     if mode == "skip-existing":
         return False
+    if mode == "resume" and note.status in {"imported", "skipped"}:
+        return False
     if mode == "update-changed":
         return note.fingerprint != fingerprint
     return True
