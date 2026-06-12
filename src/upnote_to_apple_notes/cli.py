@@ -27,10 +27,11 @@ def _write_latest_report(export_root: Path, report: dict[str, object]) -> None:
     )
 
 
-def run_extract(export_root: Path):
+def run_extract(export_root: Path) -> Path:
     source = discover_default_source()
     extraction = extract_notes(source.database_path)
-    return write_export_tree(extraction, export_root)
+    write_export_tree(extraction, export_root)
+    return export_root
 
 
 def _manifest_note_to_export_note(note: dict[str, object]) -> ExportNoteRecord:

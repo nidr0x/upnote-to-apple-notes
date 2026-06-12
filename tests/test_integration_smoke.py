@@ -39,9 +39,10 @@ def test_run_extract_writes_manifest_with_source_id_note_1_when_discovery_and_ex
     monkeypatch.setattr(cli, "discover_default_source", fake_discover_default_source)
     monkeypatch.setattr(cli, "extract_notes", fake_extract_notes)
 
-    cli.run_extract(tmp_path)
+    result = cli.run_extract(tmp_path)
 
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    assert result == tmp_path
     assert manifest["notes"][0]["source_id"] == 1
 
 
