@@ -23,10 +23,14 @@ def build_jxa_payload(manifest: ExportManifest, export_root: Path) -> dict[str, 
     }
 
 
+def _serialize_jxa_payload(payload: dict[str, object]) -> str:
+    return json.dumps(payload)
+
+
 def run_jxa_import(script_path: Path, payload: dict[str, object]) -> dict[str, Any]:
     result = subprocess.run(
         ["osascript", "-l", "JavaScript", str(script_path)],
-        input=json.dumps(payload),
+        input=_serialize_jxa_payload(payload),
         capture_output=True,
         text=True,
         check=False,

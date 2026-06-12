@@ -4,6 +4,8 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+COMPLETED_NOTE_STATUSES = frozenset({"imported", "skipped"})
+
 
 @dataclass
 class NoteState:
@@ -84,7 +86,7 @@ def should_import_note(
 
     if mode == "skip-existing":
         return False
-    if mode == "resume" and note.status in {"imported", "skipped"}:
+    if mode == "resume" and note.status in COMPLETED_NOTE_STATUSES:
         return False
     if mode == "update-changed":
         return note.fingerprint != fingerprint

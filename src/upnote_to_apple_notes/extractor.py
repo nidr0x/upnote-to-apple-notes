@@ -6,8 +6,12 @@ from pathlib import Path
 from .models import ExtractionResult, NotebookRecord, NoteRecord
 
 
+def _open_read_only_connection(database_path: Path) -> sqlite3.Connection:
+    return sqlite3.connect(f"file:{database_path.resolve()}?mode=ro", uri=True)
+
+
 def extract_notes(database_path: Path) -> ExtractionResult:
-    connection = sqlite3.connect(f"file:{database_path.resolve()}?mode=ro", uri=True)
+    connection = _open_read_only_connection(database_path)
     try:
         notebooks = [
             NotebookRecord(source_id=row[0], name=row[1])
