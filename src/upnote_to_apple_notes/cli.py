@@ -12,6 +12,22 @@ def cmd_discover() -> int:
     return 0
 
 
+def cmd_extract() -> int:
+    return 0
+
+
+def cmd_import() -> int:
+    return 0
+
+
+def cmd_resume() -> int:
+    return 0
+
+
+def cmd_report() -> int:
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="upnote-to-apple-notes")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -20,6 +36,14 @@ def build_parser() -> argparse.ArgumentParser:
         subparser = subparsers.add_parser(command)
         if command == "discover":
             subparser.set_defaults(func=cmd_discover)
+        elif command == "extract":
+            subparser.set_defaults(func=cmd_extract)
+        elif command == "import":
+            subparser.set_defaults(func=cmd_import)
+        elif command == "resume":
+            subparser.set_defaults(func=cmd_resume)
+        elif command == "report":
+            subparser.set_defaults(func=cmd_report)
 
     return parser
 
