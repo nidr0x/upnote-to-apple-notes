@@ -56,10 +56,20 @@ def save_state(path: Path, state: ImportState) -> None:
     )
 
 
-def mark_note_status(state: ImportState, note_id: str, status: str) -> None:
-    note = state.notes.setdefault(note_id, NoteState())
+def mark_note_status(state: ImportState, note_id: str, status: str) -> ImportState:
+    notes = {
+        existing_note_id: NoteState(
+            status=existing_note.status,
+            attempts=existing_note.attempts,
+            fingerprint=existing_note.fingerprint,
+        )
+        for existing_note_id, existing_note in state.notes.items()
+    }
+    note = notes.get(note_id, NoteState())
     note.status = status
     note.attempts += 1
+    notes[note_id] = note
+    return ImportState(notes=notes)
 
 
 def should_import_note(
@@ -79,9 +89,18 @@ def should_import_note(
     return True
 
 
-def build_import_report(state: ImportState) -> dict[str, int]:
+def build_import_report(state: ImportState) -> dict[str, object]:
     counts: dict[str, int] = {}
-    for note in state.notes.values():
+    notes: list[dict[str, object]] = []
+    for note_id, note in state.notes.items():
         status = str(note.status)
         counts[status] = counts.get(status, 0) + 1
-    return counts
+        notes.append(
+            {
+                "note_id": note_id,
+                "status": note.status,
+                "attempts": note.attempts,
+                "fingerprint": note.fingerprint,
+            }
+        )
+    return {"counts": counts, "notes": notes}

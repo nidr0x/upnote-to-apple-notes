@@ -13,18 +13,22 @@ def cmd_discover() -> int:
 
 
 def cmd_extract() -> int:
+    print("extract placeholder")
     return 0
 
 
 def cmd_import() -> int:
+    print("import placeholder")
     return 0
 
 
 def cmd_resume() -> int:
+    print("resume placeholder")
     return 0
 
 
 def cmd_report() -> int:
+    print("report placeholder")
     return 0
 
 
