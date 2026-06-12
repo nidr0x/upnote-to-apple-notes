@@ -32,3 +32,23 @@ class NoteRecord:
 class ExtractionResult:
     notebooks: list[NotebookRecord]
     notes: list[NoteRecord]
+
+
+@dataclass(frozen=True)
+class ExportNoteRecord:
+    source_id: int
+    title: str
+    notebook_path: list[str]
+    tags: list[str]
+    created_at: str
+    updated_at: str
+    html_path: Path
+    raw_path: Path
+    fingerprint: str
+    provenance_marker: str
+
+
+@dataclass(frozen=True)
+class ExportManifest:
+    notes: list[ExportNoteRecord]
+    counts: dict[str, int]
