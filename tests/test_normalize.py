@@ -58,3 +58,7 @@ def test_write_export_tree_fails_when_note_notebook_is_missing(tmp_path: Path) -
 
     with pytest.raises(ValueError, match="notebook_id 10"):
         write_export_tree(extraction, tmp_path)
+
+    assert not (tmp_path / "manifest.json").exists()
+    assert not (tmp_path / "notes").exists()
+    assert not (tmp_path / "raw").exists()

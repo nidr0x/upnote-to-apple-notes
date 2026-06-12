@@ -21,13 +21,20 @@ def build_fingerprint(title: str, body: str, tags: list[str]) -> str:
 
 
 def write_export_tree(extraction: ExtractionResult, export_root: Path) -> ExportManifest:
+    notebook_paths = {notebook.source_id: [notebook.name] for notebook in extraction.notebooks}
+    for note in extraction.notes:
+        if note.notebook_id not in notebook_paths:
+            raise ValueError(
+                f"Cannot write export for note {note.source_id}: "
+                f"missing notebook_id {note.notebook_id}"
+            )
+
     export_root.mkdir(parents=True, exist_ok=True)
     notes_dir = export_root / "notes"
     raw_dir = export_root / "raw"
     notes_dir.mkdir(exist_ok=True)
     raw_dir.mkdir(exist_ok=True)
 
-    notebook_paths = {notebook.source_id: [notebook.name] for notebook in extraction.notebooks}
     notes: list[ExportNoteRecord] = []
 
     for note in extraction.notes:
@@ -35,11 +42,6 @@ def write_export_tree(extraction: ExtractionResult, export_root: Path) -> Export
         raw_path = Path("raw") / f"note-{note.source_id}.json"
         fingerprint = build_fingerprint(note.title, note.raw_content, note.tags)
         provenance_marker = f"upnote:{note.source_id}"
-        if note.notebook_id not in notebook_paths:
-            raise ValueError(
-                f"Cannot write export for note {note.source_id}: "
-                f"missing notebook_id {note.notebook_id}"
-            )
         notebook_path = notebook_paths[note.notebook_id]
 
         (export_root / html_path).write_text(note.raw_content, encoding="utf-8")
