@@ -7,7 +7,7 @@ from pathlib import Path
 from .apple_notes import build_jxa_payload, run_jxa_import
 from .discovery import discover_default_source
 from .extractor import extract_notes
-from .models import ExportManifest
+from .models import ExportManifest, ExportNoteRecord
 from .normalize import load_manifest, write_export_tree
 from .state import (
     build_import_report,
@@ -33,42 +33,65 @@ def run_extract(export_root: Path):
     return write_export_tree(extraction, export_root)
 
 
+def _manifest_note_to_export_note(note: dict[str, object]) -> ExportNoteRecord:
+    return ExportNoteRecord(
+        source_id=int(note["source_id"]),
+        title=str(note["title"]),
+        notebook_path=list(note["notebook_path"]),
+        tags=list(note["tags"]),
+        created_at=str(note["created_at"]),
+        updated_at=str(note["updated_at"]),
+        html_path=Path(str(note["html_path"])),
+        raw_path=Path(str(note["raw_path"])),
+        fingerprint=str(note["fingerprint"]),
+        provenance_marker=str(note["provenance_marker"]),
+    )
+
+
 def run_import(
     export_root: Path, script_path: Path, state_path: Path, mode: str
-) -> dict[str, object]:
+) -> int:
     manifest = load_manifest(export_root / "manifest.json")
     state = load_state(state_path)
     selected_notes = [
         note
-        for note in manifest.notes
-        if should_import_note(state, str(note.source_id), note.fingerprint, mode)
+        for note in manifest["notes"]
+        if should_import_note(
+            state,
+            str(note["source_id"]),
+            str(note["fingerprint"]),
+            mode,
+        )
     ]
 
     if mode == "dry-run":
         for note in selected_notes:
-            note_id = str(note.source_id)
+            note_id = str(note["source_id"])
             state = mark_note_status(state, note_id, "planned")
-            state.notes[note_id].fingerprint = note.fingerprint
+            state.notes[note_id].fingerprint = str(note["fingerprint"])
         save_state(state_path, state)
         report = build_import_report(state)
         _write_latest_report(export_root, report)
-        return report
+        return 0
 
     payload = build_jxa_payload(
-        ExportManifest(notes=selected_notes, counts={"notes": len(selected_notes)}),
+        ExportManifest(
+            notes=[_manifest_note_to_export_note(note) for note in selected_notes],
+            counts={"notes": len(selected_notes)},
+        ),
         export_root,
     )
-    run_jxa_import(script_path, payload)
+    result = run_jxa_import(script_path, payload)
 
     for note in selected_notes:
-        note_id = str(note.source_id)
-        state = mark_note_status(state, note_id, "imported")
-        state.notes[note_id].fingerprint = note.fingerprint
+        note_id = str(note["source_id"])
+        state = mark_note_status(state, note_id, "created")
+        state.notes[note_id].fingerprint = str(note["fingerprint"])
 
     save_state(state_path, state)
     report = build_import_report(state)
     _write_latest_report(export_root, report)
-    return report
+    return int(result.get("returncode", 0))
 
 
 def cmd_discover(_args: argparse.Namespace) -> int:
@@ -83,23 +106,21 @@ def cmd_extract(args: argparse.Namespace) -> int:
 
 
 def cmd_import(args: argparse.Namespace) -> int:
-    run_import(
+    return run_import(
         export_root=args.export_root,
         script_path=Path(__file__).with_name("jxa").joinpath("import_notes.js"),
         state_path=args.export_root / "state" / "import-state.json",
         mode=args.mode,
     )
-    return 0
 
 
 def cmd_resume(args: argparse.Namespace) -> int:
-    run_import(
+    return run_import(
         export_root=args.export_root,
         script_path=Path(__file__).with_name("jxa").joinpath("import_notes.js"),
         state_path=args.export_root / "state" / "import-state.json",
         mode="resume",
     )
-    return 0
 
 
 def cmd_report(args: argparse.Namespace) -> int:

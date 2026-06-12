@@ -6,13 +6,7 @@ from pathlib import Path
 import pytest
 
 from upnote_to_apple_notes import cli
-from upnote_to_apple_notes.models import (
-    ExportManifest,
-    ExportNoteRecord,
-    ExtractionResult,
-    NotebookRecord,
-    NoteRecord,
-)
+from upnote_to_apple_notes.models import ExtractionResult, NotebookRecord, NoteRecord
 from upnote_to_apple_notes.state import load_state
 
 
@@ -59,23 +53,23 @@ def test_run_import_dry_run_writes_state_without_calling_the_jxa_launcher_when_m
     script_path = tmp_path / "import_notes.js"
     state_path = tmp_path / "state.json"
 
-    manifest = ExportManifest(
-        notes=[
-            ExportNoteRecord(
-                source_id=1,
-                title="Imported note",
-                notebook_path=["Personal"],
-                tags=[],
-                created_at="2024-01-01T00:00:00Z",
-                updated_at="2024-01-02T00:00:00Z",
-                html_path=Path("notes") / "note-1.html",
-                raw_path=Path("raw") / "note-1.json",
-                fingerprint="fingerprint-1",
-                provenance_marker="upnote:1",
-            )
+    manifest = {
+        "notes": [
+            {
+                "source_id": 1,
+                "title": "Imported note",
+                "notebook_path": ["Personal"],
+                "tags": [],
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-02T00:00:00Z",
+                "html_path": "notes/note-1.html",
+                "raw_path": "raw/note-1.json",
+                "fingerprint": "fingerprint-1",
+                "provenance_marker": "upnote:1",
+            }
         ],
-        counts={"notes": 1, "notebooks": 1},
-    )
+        "counts": {"notes": 1, "notebooks": 1},
+    }
 
     monkeypatch.setattr(cli, "load_manifest", lambda path: manifest)
 
@@ -84,7 +78,7 @@ def test_run_import_dry_run_writes_state_without_calling_the_jxa_launcher_when_m
 
     monkeypatch.setattr(cli, "run_jxa_import", fail_run_jxa_import)
 
-    report = cli.run_import(
+    result = cli.run_import(
         export_root=export_root,
         script_path=script_path,
         state_path=state_path,
@@ -92,6 +86,6 @@ def test_run_import_dry_run_writes_state_without_calling_the_jxa_launcher_when_m
     )
 
     state = load_state(state_path)
-    assert report["counts"] == {"planned": 1}
+    assert result == 0
     assert state.notes["1"].status == "planned"
     assert state.notes["1"].fingerprint == "fingerprint-1"

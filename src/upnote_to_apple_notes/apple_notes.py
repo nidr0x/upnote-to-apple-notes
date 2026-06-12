@@ -42,4 +42,6 @@ def run_jxa_import(script_path: Path, payload: dict[str, object]) -> dict[str, A
         )
     if not result.stdout.strip():
         raise RuntimeError("JXA import returned no output")
-    return json.loads(result.stdout)
+    payload = json.loads(result.stdout)
+    payload.setdefault("returncode", result.returncode)
+    return payload
