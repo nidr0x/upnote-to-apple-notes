@@ -31,6 +31,11 @@ def run_jxa_import(script_path: Path, payload: dict[str, object]) -> dict[str, A
         text=True,
         check=False,
     )
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "JXA import failed"
+        raise RuntimeError(
+            f"JXA import failed with exit code {result.returncode}: {message}"
+        )
     if not result.stdout.strip():
-        return {"status": result.returncode, "notes": []}
+        raise RuntimeError("JXA import returned no output")
     return json.loads(result.stdout)

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
-from upnote_to_apple_notes.apple_notes import build_jxa_payload
+import pytest
+
+from upnote_to_apple_notes.apple_notes import build_jxa_payload, run_jxa_import
 from upnote_to_apple_notes.models import ExportManifest, ExportNoteRecord
 
 
@@ -40,3 +43,18 @@ def test_build_jxa_payload_includes_folder_path_and_provenance_marker_for_a_note
             }
         ]
     }
+
+
+def test_run_jxa_import_raises_when_launcher_fails_without_stdout(monkeypatch: pytest.MonkeyPatch):
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=1,
+            stdout="",
+            stderr="execution error",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="execution error"):
+        run_jxa_import(Path("import_notes.js"), {"notes": []})

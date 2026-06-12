@@ -1,8 +1,9 @@
 function run() {
-  const app = Application.currentApplication();
-  app.includeStandardAdditions = true;
+  ObjC.import("Foundation");
 
-  const payload = JSON.parse(app.doShellScript("cat"));
+  const stdin = $.NSFileHandle.fileHandleWithStandardInput;
+  const data = stdin.readDataToEndOfFile;
+  const payload = JSON.parse(ObjC.unwrap($.NSString.alloc.initWithDataEncoding(data, $.NSUTF8StringEncoding)));
   const notes = (payload.notes || []).map((note) => ({
     source_id: note.source_id,
     marker: note.marker,
