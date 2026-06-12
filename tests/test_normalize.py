@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import pytest
 
 from upnote_to_apple_notes.models import ExtractionResult, NotebookRecord, NoteRecord
 from upnote_to_apple_notes.normalize import write_export_tree
@@ -34,5 +35,26 @@ def test_write_export_tree_writes_manifest_and_note_html(tmp_path: Path) -> None
     manifest = json.loads(manifest_path.read_text())
     assert manifest["counts"]["notes"] == 1
     assert manifest["counts"]["notebooks"] == 1
+    assert manifest["notes"][0]["notebook_path"] == ["Personal"]
     assert manifest["notes"][0]["fingerprint"]
     assert note_html_path.read_text() == "<p>raw html body</p>"
+
+
+def test_write_export_tree_fails_when_note_notebook_is_missing(tmp_path: Path) -> None:
+    extraction = ExtractionResult(
+        notebooks=[],
+        notes=[
+            NoteRecord(
+                source_id=1,
+                notebook_id=10,
+                title="Note 1",
+                raw_content="<p>raw html body</p>",
+                created_at="2024-01-01T09:00:00Z",
+                updated_at="2024-01-02T09:00:00Z",
+                tags=[],
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="notebook_id 10"):
+        write_export_tree(extraction, tmp_path)

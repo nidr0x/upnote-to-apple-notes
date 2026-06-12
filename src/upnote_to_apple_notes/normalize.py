@@ -35,7 +35,12 @@ def write_export_tree(extraction: ExtractionResult, export_root: Path) -> Export
         raw_path = Path("raw") / f"note-{note.source_id}.json"
         fingerprint = build_fingerprint(note.title, note.raw_content, note.tags)
         provenance_marker = f"upnote:{note.source_id}"
-        notebook_path = notebook_paths.get(note.notebook_id, [])
+        if note.notebook_id not in notebook_paths:
+            raise ValueError(
+                f"Cannot write export for note {note.source_id}: "
+                f"missing notebook_id {note.notebook_id}"
+            )
+        notebook_path = notebook_paths[note.notebook_id]
 
         (export_root / html_path).write_text(note.raw_content, encoding="utf-8")
         (export_root / raw_path).write_text(
