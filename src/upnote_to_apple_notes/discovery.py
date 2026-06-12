@@ -27,3 +27,12 @@ def discover_upnote_source(search_roots: list[Path]) -> SourceLocation:
             )
 
     raise DiscoveryError(checked_locations)
+
+
+def discover_default_source() -> SourceLocation:
+    return discover_upnote_source(
+        [
+            Path.home() / "Library" / "Application Support" / "UpNote",
+            Path.home() / "Library" / "Containers",
+        ]
+    )

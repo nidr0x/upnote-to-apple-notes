@@ -20,6 +20,29 @@ def build_fingerprint(title: str, body: str, tags: list[str]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def load_manifest(path: Path) -> ExportManifest:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    notes = [
+        ExportNoteRecord(
+            source_id=note["source_id"],
+            title=note["title"],
+            notebook_path=list(note["notebook_path"]),
+            tags=list(note["tags"]),
+            created_at=note["created_at"],
+            updated_at=note["updated_at"],
+            html_path=Path(note["html_path"]),
+            raw_path=Path(note["raw_path"]),
+            fingerprint=note["fingerprint"],
+            provenance_marker=note["provenance_marker"],
+        )
+        for note in payload.get("notes", [])
+    ]
+    counts = payload.get("counts", {})
+    if not isinstance(counts, dict):
+        counts = {}
+    return ExportManifest(notes=notes, counts=counts)
+
+
 def write_export_tree(extraction: ExtractionResult, export_root: Path) -> ExportManifest:
     notebook_paths = {notebook.source_id: [notebook.name] for notebook in extraction.notebooks}
     for note in extraction.notes:
