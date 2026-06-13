@@ -49,6 +49,22 @@ def _manifest_note_to_export_note(note: dict[str, object]) -> ExportNoteRecord:
     )
 
 
+def _imported_note_ids(result: dict[str, object]) -> set[str]:
+    notes = result.get("notes", [])
+    if not isinstance(notes, list):
+        return set()
+
+    imported_ids: set[str] = set()
+    for note in notes:
+        if not isinstance(note, dict):
+            continue
+        source_id = note.get("source_id")
+        if source_id is None:
+            continue
+        imported_ids.add(str(source_id))
+    return imported_ids
+
+
 def run_import(
     export_root: Path, script_path: Path, state_path: Path, mode: str
 ) -> int:
@@ -83,9 +99,12 @@ def run_import(
         export_root,
     )
     result = run_jxa_import(script_path, payload)
+    imported_ids = _imported_note_ids(result)
 
     for note in selected_notes:
         note_id = str(note["source_id"])
+        if note_id not in imported_ids:
+            continue
         state = mark_note_status(state, note_id, "created")
         state.notes[note_id].fingerprint = str(note["fingerprint"])
 

@@ -90,3 +90,65 @@ def test_run_import_dry_run_writes_state_without_calling_the_jxa_launcher_when_m
     assert result == 0
     assert state.notes["1"].status == "planned"
     assert state.notes["1"].fingerprint == "fingerprint-1"
+
+
+def test_run_import_non_dry_run_only_marks_notes_reported_by_jxa_as_created(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    export_root = tmp_path / "export"
+    export_root.mkdir()
+    script_path = tmp_path / "import_notes.js"
+    state_path = tmp_path / "state.json"
+
+    manifest = {
+        "notes": [
+            {
+                "source_id": 1,
+                "title": "Imported note",
+                "notebook_path": ["Personal"],
+                "tags": [],
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-02T00:00:00Z",
+                "html_path": "notes/note-1.html",
+                "raw_path": "raw/note-1.json",
+                "fingerprint": "fingerprint-1",
+                "provenance_marker": "upnote:1",
+            },
+            {
+                "source_id": 2,
+                "title": "Retryable note",
+                "notebook_path": ["Personal"],
+                "tags": [],
+                "created_at": "2024-01-03T00:00:00Z",
+                "updated_at": "2024-01-04T00:00:00Z",
+                "html_path": "notes/note-2.html",
+                "raw_path": "raw/note-2.json",
+                "fingerprint": "fingerprint-2",
+                "provenance_marker": "upnote:2",
+            },
+        ],
+        "counts": {"notes": 2, "notebooks": 1},
+    }
+
+    monkeypatch.setattr(cli, "load_manifest", lambda path: manifest)
+    monkeypatch.setattr(
+        cli,
+        "run_jxa_import",
+        lambda script_path, payload: {
+            "notes": [{"source_id": 1, "marker": "upnote:1"}],
+            "returncode": 0,
+        },
+    )
+
+    result = cli.run_import(
+        export_root=export_root,
+        script_path=script_path,
+        state_path=state_path,
+        mode="skip-existing",
+    )
+
+    state = load_state(state_path)
+    assert result == 0
+    assert state.notes["1"].status == "created"
+    assert state.notes["1"].fingerprint == "fingerprint-1"
+    assert "2" not in state.notes
