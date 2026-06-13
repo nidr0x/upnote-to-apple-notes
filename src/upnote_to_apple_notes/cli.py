@@ -36,7 +36,7 @@ def run_extract(export_root: Path) -> Path:
 
 def _manifest_note_to_export_note(note: dict[str, object]) -> ExportNoteRecord:
     return ExportNoteRecord(
-        source_id=int(note["source_id"]),
+        source_id=str(note["source_id"]),
         title=str(note["title"]),
         notebook_path=list(note["notebook_path"]),
         tags=list(note["tags"]),

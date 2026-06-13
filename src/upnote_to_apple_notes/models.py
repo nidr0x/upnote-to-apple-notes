@@ -13,14 +13,14 @@ class SourceLocation:
 
 @dataclass(frozen=True)
 class NotebookRecord:
-    source_id: int
+    source_id: str
     name: str
 
 
 @dataclass(frozen=True)
 class NoteRecord:
-    source_id: int
-    notebook_id: int
+    source_id: str
+    notebook_id: str
     title: str
     raw_content: str
     created_at: str
@@ -36,7 +36,7 @@ class ExtractionResult:
 
 @dataclass(frozen=True)
 class ExportNoteRecord:
-    source_id: int
+    source_id: str
     title: str
     notebook_path: list[str]
     tags: list[str]

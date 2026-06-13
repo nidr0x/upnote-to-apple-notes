@@ -8,3 +8,4 @@ __pycache__/
 .venv/
 pytest-of-carlos/
 uv.lock
+export/
