@@ -4,6 +4,8 @@ from pathlib import Path
 
 from .models import SourceLocation
 
+DATABASE_FILENAMES = ("UpNote.sqlite", "upnote.sqlite3")
+
 
 class DiscoveryError(RuntimeError):
     def __init__(self, checked_locations: list[Path]):
@@ -17,14 +19,19 @@ def discover_upnote_source(search_roots: list[Path]) -> SourceLocation:
 
     for root in search_roots:
         checked_locations.append(root)
-        database_path = root / "UpNote.sqlite"
-        if database_path.exists():
-            assets_path = root / "files"
-            return SourceLocation(
-                database_path=database_path,
-                assets_path=assets_path if assets_path.exists() else None,
-                checked_locations=checked_locations,
-            )
+        for database_name in DATABASE_FILENAMES:
+            database_path = root / database_name
+            if database_path.is_file():
+                assets_candidates = (root / "files", root / "images")
+                assets_path = next(
+                    (candidate for candidate in assets_candidates if candidate.exists()),
+                    None,
+                )
+                return SourceLocation(
+                    database_path=database_path,
+                    assets_path=assets_path,
+                    checked_locations=checked_locations,
+                )
 
     raise DiscoveryError(checked_locations)
 
@@ -32,6 +39,14 @@ def discover_upnote_source(search_roots: list[Path]) -> SourceLocation:
 def discover_default_source() -> SourceLocation:
     return discover_upnote_source(
         [
+            Path.home()
+            / "Library"
+            / "Containers"
+            / "com.getupnote.desktop"
+            / "Data"
+            / "Library"
+            / "Application Support"
+            / "upnote",
             Path.home() / "Library" / "Application Support" / "UpNote",
             Path.home() / "Library" / "Containers",
         ]

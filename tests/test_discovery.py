@@ -18,6 +18,18 @@ def test_discover_upnote_source_returns_database_and_assets(tmp_path: Path):
     assert result.checked_locations == [tmp_path]
 
 
+def test_discover_upnote_source_supports_container_sqlite3_and_images(tmp_path: Path):
+    db_path = tmp_path / "upnote.sqlite3"
+    db_path.write_text("")
+    assets_path = tmp_path / "images"
+    assets_path.mkdir()
+
+    result = discover_upnote_source([tmp_path])
+
+    assert result.database_path == db_path
+    assert result.assets_path == assets_path
+
+
 def test_discover_upnote_source_reports_checked_locations(tmp_path: Path):
     with pytest.raises(DiscoveryError) as exc:
         discover_upnote_source([tmp_path])
