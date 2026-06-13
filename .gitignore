@@ -1,7 +1,10 @@
 .worktrees/
+.DS_Store
 __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
 .uv-cache/
 .venv/
+pytest-of-carlos/
+uv.lock
