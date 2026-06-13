@@ -35,6 +35,20 @@ def test_should_import_note_respects_skip_existing_and_update_changed():
     assert should_import_note(state, "note-1", "abc", "update-changed") is False
     assert should_import_note(state, "note-1", "def", "update-changed") is True
     assert should_import_note(state, "note-1", "abc", "resume") is False
+    assert should_import_note(
+        ImportState(
+            notes={
+                "note-3": {
+                    "status": "created",
+                    "attempts": 1,
+                    "fingerprint": "ghi",
+                }
+            }
+        ),
+        "note-3",
+        "ghi",
+        "resume",
+    ) is False
 
 
 def test_build_import_report_counts_statuses():

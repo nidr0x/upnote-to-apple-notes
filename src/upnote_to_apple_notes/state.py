@@ -4,7 +4,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-COMPLETED_NOTE_STATUSES = frozenset({"imported", "skipped"})
+COMPLETED_NOTE_STATUSES = frozenset({"created", "imported", "skipped"})
 
 
 @dataclass
