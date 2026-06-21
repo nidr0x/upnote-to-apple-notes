@@ -135,7 +135,10 @@ def test_run_import_non_dry_run_only_marks_notes_reported_by_jxa_as_created(
         cli,
         "run_jxa_import",
         lambda script_path, payload: {
-            "notes": [{"source_id": 1, "marker": "upnote:1"}],
+            "notes": [
+                {"source_id": 1, "status": "created", "marker": "upnote:1"},
+                {"source_id": 2, "status": "failed", "marker": "upnote:2"},
+            ],
             "returncode": 0,
         },
     )

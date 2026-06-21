@@ -8,6 +8,7 @@ from .models import (
     ExportManifest,
     ExportNoteRecord,
     ExtractionResult,
+    NotebookRecord,
 )
 
 
@@ -24,9 +25,45 @@ def load_manifest(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _build_notebook_paths(notebooks: list[NotebookRecord]) -> dict[str, list[str]]:
+    notebook_by_id = {notebook.source_id: notebook for notebook in notebooks}
+    resolved: dict[str, list[str]] = {}
+
+    def resolve(notebook_id: str, lineage: tuple[str, ...]) -> list[str]:
+        if notebook_id in resolved:
+            return resolved[notebook_id]
+        if notebook_id in lineage:
+            raise ValueError(
+                f"Cannot resolve notebook path for {notebook_id}: cycle detected"
+            )
+
+        notebook = notebook_by_id.get(notebook_id)
+        if notebook is None:
+            missing_parent_id = lineage[-1] if lineage else notebook_id
+            raise ValueError(
+                f"Cannot resolve notebook path for {missing_parent_id}: "
+                f"missing parent_id {notebook_id}"
+            )
+
+        parent_path = (
+            resolve(notebook.parent_id, (*lineage, notebook.source_id))
+            if notebook.parent_id
+            else []
+        )
+        resolved[notebook_id] = [*parent_path, notebook.name]
+        return resolved[notebook_id]
+
+    for notebook in notebooks:
+        resolve(notebook.source_id, ())
+
+    return resolved
+
+
 def write_export_tree(extraction: ExtractionResult, export_root: Path) -> ExportManifest:
-    notebook_paths = {notebook.source_id: [notebook.name] for notebook in extraction.notebooks}
+    notebook_paths = _build_notebook_paths(extraction.notebooks)
     for note in extraction.notes:
+        if note.notebook_id is None:
+            continue
         if note.notebook_id not in notebook_paths:
             raise ValueError(
                 f"Cannot write export for note {note.source_id}: "
@@ -46,7 +83,7 @@ def write_export_tree(extraction: ExtractionResult, export_root: Path) -> Export
         raw_path = Path("raw") / f"note-{note.source_id}.json"
         fingerprint = build_fingerprint(note.title, note.raw_content, note.tags)
         provenance_marker = f"upnote:{note.source_id}"
-        notebook_path = notebook_paths[note.notebook_id]
+        notebook_path = [] if note.notebook_id is None else notebook_paths[note.notebook_id]
 
         (export_root / html_path).write_text(note.raw_content, encoding="utf-8")
         (export_root / raw_path).write_text(

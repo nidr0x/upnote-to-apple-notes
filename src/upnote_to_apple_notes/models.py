@@ -15,12 +15,13 @@ class SourceLocation:
 class NotebookRecord:
     source_id: str
     name: str
+    parent_id: str | None = None
 
 
 @dataclass(frozen=True)
 class NoteRecord:
     source_id: str
-    notebook_id: str
+    notebook_id: str | None
     title: str
     raw_content: str
     created_at: str

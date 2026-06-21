@@ -42,10 +42,14 @@ def extract_notes(database_path: Path) -> ExtractionResult:
     connection = _open_read_only_connection(database_path)
     try:
         notebooks = [
-            NotebookRecord(source_id=str(row["id"]), name=str(row["title"]))
+            NotebookRecord(
+                source_id=str(row["id"]),
+                name=str(row["title"]),
+                parent_id=str(row["parent"]) if row["parent"] else None,
+            )
             for row in connection.execute(
                 """
-                SELECT id, title
+                SELECT id, title, parent
                 FROM notebooks
                 WHERE deleted = 0 OR deleted IS NULL
                 ORDER BY title
@@ -78,9 +82,6 @@ def extract_notes(database_path: Path) -> ExtractionResult:
             """
         ):
             note_id = str(row["id"])
-            notebook_id = notebook_by_note_id.get(note_id)
-            if notebook_id is None:
-                continue
 
             tags = []
             for raw_tag in _decode_json_list(row["tagLinks"]):
@@ -89,7 +90,7 @@ def extract_notes(database_path: Path) -> ExtractionResult:
             notes.append(
                 NoteRecord(
                     source_id=note_id,
-                    notebook_id=notebook_id,
+                    notebook_id=notebook_by_note_id.get(note_id),
                     title=str(row["title"] or ""),
                     raw_content=str(row["html"] or ""),
                     created_at=str(row["createdAt"]),

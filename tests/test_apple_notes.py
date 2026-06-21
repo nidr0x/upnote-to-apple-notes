@@ -45,6 +45,30 @@ def test_build_jxa_payload_includes_folder_path_and_provenance_marker_for_a_note
     }
 
 
+def test_build_jxa_payload_includes_empty_folder_path_for_root_note(tmp_path: Path):
+    manifest = ExportManifest(
+        notes=[
+            ExportNoteRecord(
+                source_id="root-note",
+                title="Root note",
+                notebook_path=[],
+                tags=[],
+                created_at="2024-01-01T00:00:00Z",
+                updated_at="2024-01-02T00:00:00Z",
+                html_path=Path("notes") / "note-root.html",
+                raw_path=Path("raw") / "note-root.json",
+                fingerprint="root123",
+                provenance_marker="upnote:root-note",
+            )
+        ],
+        counts={"notes": 1, "notebooks": 0},
+    )
+
+    payload = build_jxa_payload(manifest, tmp_path)
+
+    assert payload["notes"][0]["folder"] == []
+
+
 def test_run_jxa_import_raises_when_launcher_fails_without_stdout(monkeypatch: pytest.MonkeyPatch):
     def fake_run(*args, **kwargs):
         return subprocess.CompletedProcess(

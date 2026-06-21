@@ -62,3 +62,49 @@ def test_write_export_tree_fails_when_note_notebook_is_missing(tmp_path: Path) -
     assert not (tmp_path / "manifest.json").exists()
     assert not (tmp_path / "notes").exists()
     assert not (tmp_path / "raw").exists()
+
+
+def test_write_export_tree_writes_nested_notebook_path_and_root_note(tmp_path: Path) -> None:
+    extraction = ExtractionResult(
+        notebooks=[
+            NotebookRecord(source_id="root", name="Clients"),
+            NotebookRecord(source_id="child", name="Invoices", parent_id="root"),
+        ],
+        notes=[
+            NoteRecord(
+                source_id="foldered",
+                notebook_id="child",
+                title="Invoice",
+                raw_content="<p>invoice</p>",
+                created_at="1",
+                updated_at="2",
+                tags=[],
+            ),
+            NoteRecord(
+                source_id="root-note",
+                notebook_id=None,
+                title="Inbox",
+                raw_content="<p>inbox</p>",
+                created_at="3",
+                updated_at="4",
+                tags=[],
+            ),
+        ],
+    )
+
+    manifest = write_export_tree(extraction, tmp_path)
+
+    assert manifest.notes[0].notebook_path == ["Clients", "Invoices"]
+    assert manifest.notes[1].notebook_path == []
+
+
+def test_write_export_tree_fails_for_broken_notebook_parent(tmp_path: Path) -> None:
+    extraction = ExtractionResult(
+        notebooks=[
+            NotebookRecord(source_id="child", name="Invoices", parent_id="missing")
+        ],
+        notes=[],
+    )
+
+    with pytest.raises(ValueError, match="missing parent_id missing"):
+        write_export_tree(extraction, tmp_path)

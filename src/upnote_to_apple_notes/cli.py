@@ -61,6 +61,8 @@ def _imported_note_ids(result: dict[str, object]) -> set[str]:
         source_id = note.get("source_id")
         if source_id is None:
             continue
+        if str(note.get("status")) != "created":
+            continue
         imported_ids.add(str(source_id))
     return imported_ids
 
