@@ -13,4 +13,7 @@ def test_build_parser_exposes_expected_subcommands():
         "import",
         "resume",
         "report",
+        "accounts",
+        "preflight",
+        "verify",
     }

@@ -12,6 +12,7 @@ class NoteState:
     status: str = "pending"
     attempts: int = 0
     fingerprint: str | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -32,6 +33,7 @@ def _coerce_note_state(note: NoteState | dict[str, object]) -> NoteState:
         status=str(note.get("status", "pending")),
         attempts=int(note.get("attempts", 0)),
         fingerprint=note.get("fingerprint") if note.get("fingerprint") is not None else None,
+        error=note.get("error") if note.get("error") is not None else None,
     )
 
 
@@ -58,18 +60,22 @@ def save_state(path: Path, state: ImportState) -> None:
     )
 
 
-def mark_note_status(state: ImportState, note_id: str, status: str) -> ImportState:
+def mark_note_status(
+    state: ImportState, note_id: str, status: str, error: str | None = None
+) -> ImportState:
     notes = {
         existing_note_id: NoteState(
             status=existing_note.status,
             attempts=existing_note.attempts,
             fingerprint=existing_note.fingerprint,
+            error=existing_note.error,
         )
         for existing_note_id, existing_note in state.notes.items()
     }
     note = notes.get(note_id, NoteState())
     note.status = status
     note.attempts += 1
+    note.error = error
     notes[note_id] = note
     return ImportState(notes=notes)
 
@@ -105,6 +111,7 @@ def build_import_report(state: ImportState) -> dict[str, object]:
                 "status": note.status,
                 "attempts": note.attempts,
                 "fingerprint": note.fingerprint,
+                "error": note.error,
             }
         )
     return {"counts": counts, "notes": notes}

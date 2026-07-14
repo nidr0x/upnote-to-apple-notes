@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import shutil
 from pathlib import Path
 
 from .models import (
     ExportManifest,
+    ExportAssets,
     ExportNoteRecord,
     ExtractionResult,
     NotebookRecord,
+)
+
+LOCAL_ASSET_URL = re.compile(
+    r"https?://localhost:\d+/(images|blob_storage)/([^\"'< >]+)"
 )
 
 
@@ -59,7 +66,40 @@ def _build_notebook_paths(notebooks: list[NotebookRecord]) -> dict[str, list[str
     return resolved
 
 
-def write_export_tree(extraction: ExtractionResult, export_root: Path) -> ExportManifest:
+def _copy_asset_directories(source_root: Path | None, export_root: Path) -> ExportAssets:
+    if source_root is None:
+        return ExportAssets()
+
+    copied_files = 0
+    for directory_name in ("images", "blob_storage"):
+        source_directory = source_root / directory_name
+        if not source_directory.is_dir():
+            continue
+        destination = export_root / "assets" / directory_name
+        if destination.exists():
+            shutil.rmtree(destination)
+        shutil.copytree(source_directory, destination)
+        copied_files += sum(1 for path in destination.rglob("*") if path.is_file())
+    return ExportAssets(copied_files=copied_files)
+
+
+def _rewrite_asset_urls(html: str, export_root: Path) -> tuple[str, list[str]]:
+    missing_references: list[str] = []
+
+    def replace(match: re.Match[str]) -> str:
+        relative_path = Path(match.group(1)) / match.group(2)
+        asset_path = export_root / "assets" / relative_path
+        if asset_path.is_file():
+            return asset_path.as_uri()
+        missing_references.append(match.group(0))
+        return match.group(0)
+
+    return LOCAL_ASSET_URL.sub(replace, html), missing_references
+
+
+def write_export_tree(
+    extraction: ExtractionResult, export_root: Path, source_root: Path | None = None
+) -> ExportManifest:
     notebook_paths = _build_notebook_paths(extraction.notebooks)
     for note in extraction.notes:
         if note.notebook_id is None:
@@ -75,6 +115,8 @@ def write_export_tree(extraction: ExtractionResult, export_root: Path) -> Export
     raw_dir = export_root / "raw"
     notes_dir.mkdir(exist_ok=True)
     raw_dir.mkdir(exist_ok=True)
+    copied_assets = _copy_asset_directories(source_root, export_root)
+    missing_asset_references: list[str] = []
 
     notes: list[ExportNoteRecord] = []
 
@@ -85,7 +127,9 @@ def write_export_tree(extraction: ExtractionResult, export_root: Path) -> Export
         provenance_marker = f"upnote:{note.source_id}"
         notebook_path = [] if note.notebook_id is None else notebook_paths[note.notebook_id]
 
-        (export_root / html_path).write_text(note.raw_content, encoding="utf-8")
+        html, missing_references = _rewrite_asset_urls(note.raw_content, export_root)
+        missing_asset_references.extend(missing_references)
+        (export_root / html_path).write_text(html, encoding="utf-8")
         (export_root / raw_path).write_text(
             json.dumps(
                 {
@@ -121,6 +165,10 @@ def write_export_tree(extraction: ExtractionResult, export_root: Path) -> Export
     manifest = ExportManifest(
         notes=notes,
         counts={"notes": len(extraction.notes), "notebooks": len(extraction.notebooks)},
+        assets=ExportAssets(
+            copied_files=copied_assets.copied_files,
+            missing_references=missing_asset_references,
+        ),
     )
     (export_root / "manifest.json").write_text(
         json.dumps(
@@ -141,6 +189,10 @@ def write_export_tree(extraction: ExtractionResult, export_root: Path) -> Export
                     for record in manifest.notes
                 ],
                 "counts": manifest.counts,
+                "assets": {
+                    "copied_files": manifest.assets.copied_files,
+                    "missing_references": manifest.assets.missing_references,
+                },
             },
             ensure_ascii=False,
             indent=2,

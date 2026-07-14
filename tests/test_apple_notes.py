@@ -33,12 +33,16 @@ def test_build_jxa_payload_includes_folder_path_and_provenance_marker_for_a_note
     payload = build_jxa_payload(manifest, tmp_path)
 
     assert payload == {
+        "account_name": None,
         "notes": [
             {
                 "source_id": 42,
                 "title": "Imported note",
                 "folder": ["Work", "Project X"],
                 "html_path": str(tmp_path / "notes" / "note-42.html"),
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-02T00:00:00Z",
+                "tags": ["alpha"],
                 "marker": "upnote:42",
             }
         ]
@@ -82,3 +86,17 @@ def test_run_jxa_import_raises_when_launcher_fails_without_stdout(monkeypatch: p
 
     with pytest.raises(RuntimeError, match="execution error"):
         run_jxa_import(Path("import_notes.js"), {"notes": []})
+
+
+def test_jxa_script_uses_a_persistent_plain_text_provenance_marker() -> None:
+    script = (
+        Path(__file__).parents[1]
+        / "src"
+        / "upnote_to_apple_notes"
+        / "jxa"
+        / "import_notes.js"
+    ).read_text(encoding="utf-8")
+
+    assert "UpNote source:" in script
+    assert "<!-- ${escapeHtml(marker)} -->" not in script
+    assert "collectImportedNotes(account, wantedMarkers, existingNotes)" in script

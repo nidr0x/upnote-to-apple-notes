@@ -50,6 +50,13 @@ class ExportNoteRecord:
 
 
 @dataclass(frozen=True)
+class ExportAssets:
+    copied_files: int = 0
+    missing_references: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class ExportManifest:
     notes: list[ExportNoteRecord]
     counts: dict[str, int]
+    assets: ExportAssets = field(default_factory=ExportAssets)

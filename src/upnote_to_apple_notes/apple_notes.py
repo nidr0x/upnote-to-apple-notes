@@ -8,14 +8,20 @@ from typing import Any
 from .models import ExportManifest
 
 
-def build_jxa_payload(manifest: ExportManifest, export_root: Path) -> dict[str, object]:
+def build_jxa_payload(
+    manifest: ExportManifest, export_root: Path, account_name: str | None = None
+) -> dict[str, object]:
     return {
+        "account_name": account_name,
         "notes": [
             {
                 "source_id": note.source_id,
                 "title": note.title,
                 "folder": note.notebook_path,
                 "html_path": str(export_root / note.html_path),
+                "created_at": note.created_at,
+                "updated_at": note.updated_at,
+                "tags": note.tags,
                 "marker": note.provenance_marker,
             }
             for note in manifest.notes

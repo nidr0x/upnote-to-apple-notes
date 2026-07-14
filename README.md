@@ -1,134 +1,101 @@
 # UpNote to Apple Notes
 
-CLI importer that reads the local UpNote macOS database and creates notes in Apple Notes.
+CLI importer that reads the local UpNote macOS database and creates corresponding notes in Apple Notes.
 
-## Status
+## Run a Migration
 
-What works now:
+Run these commands from the repository root. Do **not** drag `export/` into Apple Notes: it contains internal JSON, HTML, state, and report files.
 
-- `discover`
-- `extract`
-- `import`
-- `resume`
-- `report`
+### 1. Choose the destination account
 
-## Most Important Rule
+```bash
+UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes accounts
+```
 
-Do **not** manually import the whole `export/` folder into Apple Notes.
+Copy the exact account name shown, for example `nidr0x@icloud.com`.
 
-If you do that, Apple Notes will import internal files like:
-
-- `raw/*.json`
-- `manifest.json`
-- importer state/report files
-
-That is why you can end up with notes that look like raw JSON.
-
-## How to Execute
-
-From the repository root, use `uv run`:
+### 2. Export UpNote
 
 ```bash
 UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes discover
 UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes extract --export-root ./export
-UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes import --export-root ./export --mode skip-existing
-UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes resume --export-root ./export
+UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes preflight --export-root ./export
+```
+
+`preflight` must report `"ready": true`. It also reports copied assets and any local image references it could not resolve.
+
+### 3. Import into Apple Notes
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes import \
+  --export-root ./export \
+  --account "nidr0x@icloud.com" \
+  --mode skip-existing \
+  --batch-size 50
+```
+
+This creates the UpNote notebook hierarchy directly under the selected account. Notes without a notebook go at the account root.
+
+### 4. Verify the result
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes verify \
+  --export-root ./export \
+  --account "nidr0x@icloud.com"
+
 UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes report --export-root ./export
 ```
 
-Run the tests with:
+`verify` checks every exported UpNote source ID against Apple Notes. `report` shows created, updated, and failed notes with retry counts.
+
+### 5. Resume safely
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes resume \
+  --export-root ./export \
+  --account "nidr0x@icloud.com" \
+  --batch-size 50
+```
+
+The importer saves state after every batch. If it is interrupted, `resume` retries failures without recreating completed notes.
+
+## What Is Preserved
+
+- Nested notebook/category hierarchy
+- Note titles and HTML bodies
+- Original UpNote creation and modification dates
+- UpNote tags as Apple Notes `#tags`
+- Local image and blob-storage files referenced by UpNote's local URLs
+- A visible `UpNote source: upnote:<id>` footer for duplicate prevention, updates, and verification
+
+Apple Notes has no scriptable custom metadata field. The source footer is visible deliberately: Notes strips HTML comments, which would make a hidden marker unreliable.
+
+## Update Changed Notes
+
+After exporting again, apply only notes whose title, body, or tags changed:
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes import \
+  --export-root ./export \
+  --account "nidr0x@icloud.com" \
+  --mode update-changed
+```
+
+## Export Directory
+
+`export/` is internal importer output, not a Finder import folder:
+
+- `notes/`: normalized HTML note bodies
+- `assets/`: copied UpNote local images and blobs
+- `raw/`: raw debug records
+- `manifest.json`: normalized manifest
+- `state/`: resumable importer state
+- `reports/`: importer reports
+
+## Tests
 
 ```bash
 UV_CACHE_DIR=.uv-cache uv run --with pytest pytest -v
 ```
 
-Why that command works:
-
-- `UV_CACHE_DIR=.uv-cache` keeps uv's cache inside the repo
-- `uv run --with pytest` installs `pytest` just for that run
-- `pytest -v` runs the full suite with verbose test names
-
-If you want the command available inside the repo venv:
-
-```bash
-uv sync
-source .venv/bin/activate
-upnote-to-apple-notes discover
-```
-
-## Recommended Workflow
-
-### 1. Find the UpNote database
-
-```bash
-UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes discover
-```
-
-This should print the SQLite path.
-
-### 2. Extract the notes
-
-```bash
-UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes extract --export-root ./export
-```
-
-This creates the internal export directory the importer uses.
-
-### 3. Treat `export/` as internal output
-
-`export/` is not meant to be dragged into Apple Notes by hand.
-
-It contains:
-
-- `notes/`: HTML note bodies
-- `raw/`: raw debug records
-- `manifest.json`: normalized manifest
-- `state/`: importer state
-- `reports/`: importer reports
-
-### 4. Import into Apple Notes
-
-Use the importer, not Finder drag-and-drop:
-
-```bash
-UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes import --export-root ./export --mode skip-existing
-```
-
-What this does:
-
-- reads `export/manifest.json`
-- creates Apple Notes folders that match the UpNote notebook path
-- places notes with no UpNote category directly in the Apple Notes account root
-- skips notes already marked as imported in importer state
-
-Current account behavior:
-
-- notes are imported into the first Apple Notes account returned by `Notes.app`
-
-Useful modes:
-
-- `--mode skip-existing`: import notes that have not been marked as created yet
-- `--mode update-changed`: retry notes whose exported fingerprint changed
-- `--mode dry-run`: write importer state/report data without creating Apple Notes content
-
-If you previously ran an older broken import and need to run the full migration again, remove:
-
-```text
-export/state/import-state.json
-```
-
-or use a fresh export root before rerunning the import. That resets importer tracking only. It does **not** delete existing Apple Notes content.
-
-### 5. Resume or inspect results
-
-Resume:
-
-```bash
-UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes resume --export-root ./export
-```
-
-Read the latest report:
-
-```bash
-UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes report --export-root ./export
-```
+`UV_CACHE_DIR=.uv-cache` keeps the uv cache inside the repository. `uv run --with pytest` installs pytest only for that run.
