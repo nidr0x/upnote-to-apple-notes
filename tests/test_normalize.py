@@ -4,7 +4,12 @@ import json
 from pathlib import Path
 import pytest
 
-from upnote_to_apple_notes.models import ExtractionResult, NotebookRecord, NoteRecord
+from upnote_to_apple_notes.models import (
+    ExtractionResult,
+    NotebookRecord,
+    NoteRecord,
+    WorkspaceRecord,
+)
 from upnote_to_apple_notes.normalize import write_export_tree
 
 
@@ -135,3 +140,53 @@ def test_write_export_tree_rewrites_copied_local_image_urls(tmp_path: Path) -> N
     assert exported_image.read_bytes() == b"image"
     assert exported_image.as_uri() in (tmp_path / "export" / "notes" / "note-note-1.html").read_text()
     assert manifest.assets.copied_files == 1
+
+
+def test_write_export_tree_does_not_delete_existing_assets(tmp_path: Path) -> None:
+    source_root = tmp_path / "upnote"
+    (source_root / "images").mkdir(parents=True)
+    (source_root / "images" / "current.jpg").write_bytes(b"current")
+    export_root = tmp_path / "export"
+    stale_asset = export_root / "assets" / "images" / "stale.jpg"
+    stale_asset.parent.mkdir(parents=True)
+    stale_asset.write_bytes(b"stale")
+
+    write_export_tree(ExtractionResult(notebooks=[], notes=[]), export_root, source_root)
+
+    assert stale_asset.read_bytes() == b"stale"
+    assert (export_root / "assets" / "images" / "current.jpg").read_bytes() == b"current"
+
+
+def test_write_export_tree_can_prefix_notebooks_with_workspace(tmp_path: Path) -> None:
+    extraction = ExtractionResult(
+        workspaces=[WorkspaceRecord(source_id="space-1", name="Team Space")],
+        notebooks=[
+            NotebookRecord(
+                source_id="notebook-1",
+                name="Projects",
+                workspace_id="space-1",
+            )
+        ],
+        notes=[
+            NoteRecord(
+                source_id="note-1",
+                notebook_id="notebook-1",
+                workspace_id="space-1",
+                title="Plan",
+                raw_content="<p>Plan</p>",
+                created_at="1",
+                updated_at="2",
+                note_links=["note-2"],
+                file_ids=["file-1"],
+            )
+        ],
+    )
+
+    manifest = write_export_tree(
+        extraction, tmp_path / "export", spaces_as_folders=True
+    )
+
+    assert manifest.notes[0].notebook_path == ["Team Space", "Projects"]
+    raw = json.loads((tmp_path / "export" / "raw" / "note-note-1.json").read_text())
+    assert raw["note_links"] == ["note-2"]
+    assert raw["file_ids"] == ["file-1"]

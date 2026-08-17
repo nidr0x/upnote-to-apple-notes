@@ -19,9 +19,14 @@ LOCAL_ASSET_URL = re.compile(
 )
 
 
-def build_fingerprint(title: str, body: str, tags: list[str]) -> str:
+def build_fingerprint(
+    title: str,
+    body: str,
+    tags: list[str],
+    metadata: dict[str, object] | None = None,
+) -> str:
     payload = json.dumps(
-        {"title": title, "body": body, "tags": tags},
+        {"title": title, "body": body, "tags": tags, "metadata": metadata or {}},
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -76,31 +81,41 @@ def _copy_asset_directories(source_root: Path | None, export_root: Path) -> Expo
         if not source_directory.is_dir():
             continue
         destination = export_root / "assets" / directory_name
-        if destination.exists():
-            shutil.rmtree(destination)
-        shutil.copytree(source_directory, destination)
+        shutil.copytree(source_directory, destination, dirs_exist_ok=True)
         copied_files += sum(1 for path in destination.rglob("*") if path.is_file())
     return ExportAssets(copied_files=copied_files)
 
 
-def _rewrite_asset_urls(html: str, export_root: Path) -> tuple[str, list[str]]:
+def _rewrite_asset_urls(
+    html: str, export_root: Path
+) -> tuple[str, list[str], list[Path]]:
     missing_references: list[str] = []
+    attachment_paths: list[Path] = []
 
     def replace(match: re.Match[str]) -> str:
         relative_path = Path(match.group(1)) / match.group(2)
         asset_path = export_root / "assets" / relative_path
         if asset_path.is_file():
+            if asset_path not in attachment_paths:
+                attachment_paths.append(asset_path)
             return asset_path.as_uri()
         missing_references.append(match.group(0))
         return match.group(0)
 
-    return LOCAL_ASSET_URL.sub(replace, html), missing_references
+    return LOCAL_ASSET_URL.sub(replace, html), missing_references, attachment_paths
 
 
 def write_export_tree(
-    extraction: ExtractionResult, export_root: Path, source_root: Path | None = None
+    extraction: ExtractionResult,
+    export_root: Path,
+    source_root: Path | None = None,
+    spaces_as_folders: bool = False,
 ) -> ExportManifest:
     notebook_paths = _build_notebook_paths(extraction.notebooks)
+    notebook_by_id = {notebook.source_id: notebook for notebook in extraction.notebooks}
+    workspace_names = {
+        workspace.source_id: workspace.name for workspace in extraction.workspaces
+    }
     for note in extraction.notes:
         if note.notebook_id is None:
             continue
@@ -123,11 +138,31 @@ def write_export_tree(
     for note in extraction.notes:
         html_path = Path("notes") / f"note-{note.source_id}.html"
         raw_path = Path("raw") / f"note-{note.source_id}.json"
-        fingerprint = build_fingerprint(note.title, note.raw_content, note.tags)
+        metadata = {
+            "workspace_id": note.workspace_id,
+            "note_links": note.note_links,
+            "file_ids": note.file_ids,
+            "pinned": note.pinned,
+            "bookmarked": note.bookmarked,
+            "is_template": note.is_template,
+            "rtl": note.rtl,
+        }
+        fingerprint = build_fingerprint(
+            note.title, note.raw_content, note.tags, metadata
+        )
         provenance_marker = f"upnote:{note.source_id}"
         notebook_path = [] if note.notebook_id is None else notebook_paths[note.notebook_id]
+        notebook = notebook_by_id.get(note.notebook_id) if note.notebook_id else None
+        workspace_id = note.workspace_id or (
+            notebook.workspace_id if notebook is not None else None
+        )
+        workspace_name = workspace_names.get(workspace_id) if workspace_id else None
+        if spaces_as_folders and workspace_name:
+            notebook_path = [workspace_name, *notebook_path]
 
-        html, missing_references = _rewrite_asset_urls(note.raw_content, export_root)
+        html, missing_references, attachment_paths = _rewrite_asset_urls(
+            note.raw_content, export_root
+        )
         missing_asset_references.extend(missing_references)
         (export_root / html_path).write_text(html, encoding="utf-8")
         (export_root / raw_path).write_text(
@@ -140,6 +175,14 @@ def write_export_tree(
                     "created_at": note.created_at,
                     "updated_at": note.updated_at,
                     "tags": note.tags,
+                    "workspace_id": workspace_id,
+                    "workspace_name": workspace_name,
+                    "note_links": note.note_links,
+                    "file_ids": note.file_ids,
+                    "pinned": note.pinned,
+                    "bookmarked": note.bookmarked,
+                    "is_template": note.is_template,
+                    "rtl": note.rtl,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -159,12 +202,24 @@ def write_export_tree(
                 raw_path=raw_path,
                 fingerprint=fingerprint,
                 provenance_marker=provenance_marker,
+                workspace_name=workspace_name,
+                note_links=note.note_links,
+                file_ids=note.file_ids,
+                pinned=note.pinned,
+                bookmarked=note.bookmarked,
+                is_template=note.is_template,
+                rtl=note.rtl,
+                attachment_paths=attachment_paths,
             )
         )
 
     manifest = ExportManifest(
         notes=notes,
-        counts={"notes": len(extraction.notes), "notebooks": len(extraction.notebooks)},
+        counts={
+            "notes": len(extraction.notes),
+            "notebooks": len(extraction.notebooks),
+            "workspaces": len(extraction.workspaces),
+        },
         assets=ExportAssets(
             copied_files=copied_assets.copied_files,
             missing_references=missing_asset_references,
@@ -185,10 +240,22 @@ def write_export_tree(
                         "raw_path": str(record.raw_path),
                         "fingerprint": record.fingerprint,
                         "provenance_marker": record.provenance_marker,
+                        "workspace_name": record.workspace_name,
+                        "note_links": record.note_links,
+                        "file_ids": record.file_ids,
+                        "pinned": record.pinned,
+                        "bookmarked": record.bookmarked,
+                        "is_template": record.is_template,
+                        "rtl": record.rtl,
+                        "attachment_paths": [
+                            str(path.relative_to(export_root))
+                            for path in record.attachment_paths
+                        ],
                     }
                     for record in manifest.notes
                 ],
                 "counts": manifest.counts,
+                "options": {"spaces_as_folders": spaces_as_folders},
                 "assets": {
                     "copied_files": manifest.assets.copied_files,
                     "missing_references": manifest.assets.missing_references,

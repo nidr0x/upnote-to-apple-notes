@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import upnote_to_apple_notes.extractor as extractor
 from upnote_to_apple_notes.extractor import extract_notes
 
 
@@ -19,6 +20,7 @@ def fixture_db_path(tmp_path: Path) -> Path:
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
                 parent TEXT,
+                space TEXT,
                 deleted INTEGER DEFAULT 0
             );
 
@@ -29,8 +31,21 @@ def fixture_db_path(tmp_path: Path) -> Path:
                 createdAt DOUBLE NOT NULL,
                 updatedAt DOUBLE NOT NULL,
                 tagLinks TEXT NOT NULL DEFAULT '[]',
+                space TEXT,
+                noteLinks TEXT NOT NULL DEFAULT '[]',
+                fileIds TEXT NOT NULL DEFAULT '[]',
+                pinned INTEGER DEFAULT 0,
+                bookmarked INTEGER DEFAULT 0,
+                isTemplate INTEGER DEFAULT 0,
+                rtl INTEGER DEFAULT 0,
                 deleted INTEGER DEFAULT 0,
                 trashed INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE workspaces (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                deleted INTEGER DEFAULT 0
             );
 
             CREATE TABLE tags (
@@ -55,6 +70,8 @@ def fixture_db_path(tmp_path: Path) -> Path:
                 ("notebook-1", "Personal", "notebook-3"),
             ],
         )
+        connection.execute("INSERT INTO workspaces (id, name) VALUES ('space-1', 'Team Space')")
+        connection.execute("UPDATE notebooks SET space = 'space-1' WHERE id = 'notebook-2'")
         connection.executemany(
             "INSERT INTO notes (id, title, html, createdAt, updatedAt, tagLinks) VALUES (?, ?, ?, ?, ?, ?)",
             [
@@ -62,6 +79,14 @@ def fixture_db_path(tmp_path: Path) -> Path:
                 ("note-1", "First note", "content-1", 1704100000.0, 1704272400.0, "[\"beta\", \"alpha\"]"),
                 ("note-3", "Third note", "content-3", 1704101000.0, 1704273400.0, "[]"),
             ],
+        )
+        connection.execute(
+            """
+            UPDATE notes
+            SET space = 'space-1', noteLinks = '["note-1"]',
+                fileIds = '["file-1"]', pinned = 1
+            WHERE id = 'note-2'
+            """
         )
         connection.executemany(
             "INSERT INTO tags (id, title) VALUES (?, ?)",
@@ -119,3 +144,28 @@ def test_extract_notes_keeps_active_notes_without_notebook_assignment(fixture_db
         ("note-3", None),
         ("note-2", "notebook-2"),
     ]
+
+
+def test_extract_notes_preserves_workspace_links_files_and_flags(fixture_db_path: Path):
+    result = extract_notes(fixture_db_path)
+    note = next(note for note in result.notes if note.source_id == "note-2")
+
+    assert [(workspace.source_id, workspace.name) for workspace in result.workspaces] == [
+        ("space-1", "Team Space")
+    ]
+    assert note.workspace_id == "space-1"
+    assert note.note_links == ["note-1"]
+    assert note.file_ids == ["file-1"]
+    assert note.pinned is True
+
+
+def test_extract_notes_reports_macos_database_permission_denial(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def deny(*args, **kwargs):
+        raise sqlite3.OperationalError("unable to open database file: authorization denied")
+
+    monkeypatch.setattr(extractor.sqlite3, "connect", deny)
+
+    with pytest.raises(extractor.SourceAccessError, match="Full Disk Access"):
+        extract_notes(tmp_path / "upnote.sqlite3")

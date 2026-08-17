@@ -76,28 +76,74 @@ function run() {
     return match ? match[1] : null;
   }
 
-  function collectImportedNotes(container, wantedMarkers, foundNotes) {
+  function collectImportedNotes(container, wantedMarkers, foundNotes, folderPath) {
     for (const note of container.notes()) {
       const marker = sourceMarker(note.body());
       if (marker && wantedMarkers[marker]) {
-        foundNotes[marker] = note;
+        if (!foundNotes[marker]) {
+          foundNotes[marker] = [];
+        }
+        foundNotes[marker].push({ note, folderPath });
       }
     }
     for (const folder of container.folders()) {
-      collectImportedNotes(folder, wantedMarkers, foundNotes);
+      collectImportedNotes(
+        folder,
+        wantedMarkers,
+        foundNotes,
+        folderPath.concat([String(folder.name())])
+      );
     }
   }
 
-  function collectImportedMarkers(container, markers) {
-    for (const note of container.notes()) {
-      const marker = sourceMarker(note.body());
-      if (marker && Object.prototype.hasOwnProperty.call(markers, marker)) {
-        markers[marker] = true;
+  function noteSummary(record) {
+    const note = record.note;
+    const attachmentsById = {};
+    for (const attachment of note.attachments()) {
+      attachmentsById[String(attachment.id())] = String(attachment.name());
+    }
+    return {
+      destination_id: String(note.id()),
+      title: String(note.name()),
+      body: String(note.body()),
+      folder_path: record.folderPath,
+      created_at: new Date(note.creationDate()).toISOString(),
+      updated_at: new Date(note.modificationDate()).toISOString(),
+      attachment_names: Object.values(attachmentsById),
+    };
+  }
+
+  function ensureAttachments(note, paths) {
+    const existingNames = {};
+    for (const attachment of note.attachments()) {
+      existingNames[String(attachment.name())] = true;
+    }
+    for (const path of paths || []) {
+      const name = String($(path).lastPathComponent.js);
+      if (!existingNames[name]) {
+        notesApp.make({ new: "attachment", at: note, withData: Path(path) });
+        existingNames[name] = true;
       }
     }
-    for (const folder of container.folders()) {
-      collectImportedMarkers(folder, markers);
+    return Object.keys(existingNames);
+  }
+
+  function samePath(left, right) {
+    return JSON.stringify(left) === JSON.stringify(right);
+  }
+
+  function importedNoteRecords(markers) {
+    const wantedMarkers = {};
+    for (const marker of markers) {
+      wantedMarkers[marker] = true;
     }
+    const foundNotes = {};
+    collectImportedNotes(account, wantedMarkers, foundNotes, []);
+    const summaries = {};
+    for (const marker of markers) {
+      summaries[marker] = (foundNotes[marker] || []).map(noteSummary);
+    }
+    return summaries;
   }
 
   if (payload.operation === "accounts") {
@@ -129,12 +175,45 @@ function run() {
   }
 
   if (payload.operation === "verify") {
-    const markers = {};
-    for (const marker of payload.markers || []) {
-      markers[marker] = false;
-    }
-    collectImportedMarkers(account, markers);
-    return JSON.stringify({ markers });
+    return JSON.stringify({ notes: importedNoteRecords(payload.markers || []) });
+  }
+
+  if (payload.operation === "rollback") {
+    const markers = (payload.notes || []).map((note) => note.marker);
+    const records = importedNoteRecords(markers);
+    const outcomes = (payload.notes || []).map((target) => {
+      const matches = records[target.marker] || [];
+      const match = matches.find(
+        (candidate) => candidate.destination_id === String(target.destination_id)
+      );
+      if (!match) {
+        return { source_id: target.source_id, status: "failed", error: "Destination note not found" };
+      }
+      if (
+        target.expected_title && match.title !== String(target.expected_title)
+      ) {
+        return { source_id: target.source_id, status: "failed", error: "Destination note was edited after import" };
+      }
+      if (
+        target.expected_updated_at &&
+        Math.abs(new Date(match.updated_at).getTime() - new Date(target.expected_updated_at).getTime()) > 1000
+      ) {
+        return { source_id: target.source_id, status: "failed", error: "Destination note was edited after import" };
+      }
+      const wanted = {};
+      wanted[target.marker] = true;
+      const found = {};
+      collectImportedNotes(account, wanted, found, []);
+      const record = (found[target.marker] || []).find(
+        (candidate) => String(candidate.note.id()) === String(target.destination_id)
+      );
+      if (!record) {
+        return { source_id: target.source_id, status: "failed", error: "Destination identity changed" };
+      }
+      record.note.delete();
+      return { source_id: target.source_id, status: "deleted" };
+    });
+    return JSON.stringify({ notes: outcomes });
   }
 
   const notes = payload.notes || [];
@@ -143,7 +222,7 @@ function run() {
     wantedMarkers[note.marker] = true;
   }
   const existingNotes = {};
-  collectImportedNotes(account, wantedMarkers, existingNotes);
+  collectImportedNotes(account, wantedMarkers, existingNotes, []);
 
   const results = notes.map((note) => {
     const folderPath = Array.isArray(note.folder) ? note.folder : [];
@@ -152,28 +231,46 @@ function run() {
       const container = resolveContainer(folderPath);
       const creationDate = parseRequiredDate(note.created_at, "created_at", note.source_id);
       const modificationDate = parseRequiredDate(note.updated_at, "updated_at", note.source_id);
-      const existing = existingNotes[note.marker];
-      if (existing) {
+      const matches = existingNotes[note.marker] || [];
+      if (matches.length > 1) {
+        throw new Error(`Duplicate Apple Notes found for ${note.marker}`);
+      }
+      const existingRecord = matches[0];
+      if (existingRecord) {
+        const existing = existingRecord.note;
+        if (!samePath(existingRecord.folderPath, folderPath)) {
+          notesApp.move(existing, { to: container });
+        }
         existing.name = note.title;
         existing.body = body;
         existing.modificationDate = modificationDate;
+        const attachmentNames = ensureAttachments(existing, note.attachment_paths);
         return {
           source_id: note.source_id,
           status: "updated",
           marker: note.marker,
           folder_path: folderPath,
+          destination_id: String(existing.id()),
+          destination_title: String(existing.name()),
+          destination_updated_at: new Date(existing.modificationDate()).toISOString(),
+          attachment_names: attachmentNames,
         };
       }
-      notesApp.make({
+      const created = notesApp.make({
         new: "note",
         at: container,
         withProperties: { name: note.title, body, creationDate, modificationDate },
       });
+      const attachmentNames = ensureAttachments(created, note.attachment_paths);
       return {
         source_id: note.source_id,
         status: "created",
         marker: note.marker,
         folder_path: folderPath,
+        destination_id: String(created.id()),
+        destination_title: String(created.name()),
+        destination_updated_at: new Date(created.modificationDate()).toISOString(),
+        attachment_names: attachmentNames,
       };
     } catch (error) {
       return {

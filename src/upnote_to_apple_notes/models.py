@@ -12,10 +12,17 @@ class SourceLocation:
 
 
 @dataclass(frozen=True)
+class WorkspaceRecord:
+    source_id: str
+    name: str
+
+
+@dataclass(frozen=True)
 class NotebookRecord:
     source_id: str
     name: str
     parent_id: str | None = None
+    workspace_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -27,12 +34,20 @@ class NoteRecord:
     created_at: str
     updated_at: str
     tags: list[str] = field(default_factory=list)
+    workspace_id: str | None = None
+    note_links: list[str] = field(default_factory=list)
+    file_ids: list[str] = field(default_factory=list)
+    pinned: bool = False
+    bookmarked: bool = False
+    is_template: bool = False
+    rtl: bool = False
 
 
 @dataclass(frozen=True)
 class ExtractionResult:
     notebooks: list[NotebookRecord]
     notes: list[NoteRecord]
+    workspaces: list[WorkspaceRecord] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -47,6 +62,14 @@ class ExportNoteRecord:
     raw_path: Path
     fingerprint: str
     provenance_marker: str
+    workspace_name: str | None = None
+    note_links: list[str] = field(default_factory=list)
+    file_ids: list[str] = field(default_factory=list)
+    pinned: bool = False
+    bookmarked: bool = False
+    is_template: bool = False
+    rtl: bool = False
+    attachment_paths: list[Path] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

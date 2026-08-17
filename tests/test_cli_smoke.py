@@ -16,4 +16,14 @@ def test_build_parser_exposes_expected_subcommands():
         "accounts",
         "preflight",
         "verify",
+        "migrate",
+        "rollback",
     }
+
+
+def test_migrate_parser_exposes_canary_option():
+    args = build_parser().parse_args(
+        ["migrate", "--export-root", "export", "--canary", "5"]
+    )
+
+    assert args.canary == 5

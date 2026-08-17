@@ -19,6 +19,48 @@ def test_mark_note_status_tracks_latest_status_and_attempts():
     assert updated_state.notes["note-1"].attempts == 2
 
 
+def test_mark_note_status_records_destination_ledger_fields():
+    state = mark_note_status(
+        ImportState(),
+        "note-1",
+        "created",
+        destination_id="x-coredata://note-1",
+        destination_folder=["Work", "Project"],
+        session_id="session-1",
+    )
+
+    assert state.notes["note-1"].destination_id == "x-coredata://note-1"
+    assert state.notes["note-1"].destination_folder == ["Work", "Project"]
+    assert state.notes["note-1"].session_id == "session-1"
+    assert state.notes["note-1"].created_by_importer is False
+
+
+def test_note_state_round_trips_rollback_guard_fields():
+    state = mark_note_status(
+        ImportState(),
+        "note-1",
+        "created",
+        session_id="session-1",
+        created_by_importer=True,
+        destination_title="Title",
+        destination_updated_at="2026-08-17T10:00:00Z",
+    )
+
+    from pathlib import Path
+    import tempfile
+    from upnote_to_apple_notes.state import load_state, save_state
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "state.json"
+        save_state(path, state)
+        restored = load_state(path)
+
+    note = restored.notes["note-1"]
+    assert note.created_by_importer is True
+    assert note.destination_title == "Title"
+    assert note.destination_updated_at == "2026-08-17T10:00:00Z"
+
+
 def test_should_import_note_respects_skip_existing_and_update_changed():
     state = ImportState(
         notes={
@@ -47,6 +89,20 @@ def test_should_import_note_respects_skip_existing_and_update_changed():
         ),
         "note-3",
         "ghi",
+        "resume",
+    ) is False
+    assert should_import_note(
+        ImportState(
+            notes={
+                "note-4": {
+                    "status": "updated",
+                    "attempts": 1,
+                    "fingerprint": "jkl",
+                }
+            }
+        ),
+        "note-4",
+        "jkl",
         "resume",
     ) is False
 

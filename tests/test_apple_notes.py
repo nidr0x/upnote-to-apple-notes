@@ -44,6 +44,7 @@ def test_build_jxa_payload_includes_folder_path_and_provenance_marker_for_a_note
                 "updated_at": "2024-01-02T00:00:00Z",
                 "tags": ["alpha"],
                 "marker": "upnote:42",
+                "attachment_paths": [],
             }
         ]
     }
@@ -99,4 +100,5 @@ def test_jxa_script_uses_a_persistent_plain_text_provenance_marker() -> None:
 
     assert "UpNote source:" in script
     assert "<!-- ${escapeHtml(marker)} -->" not in script
-    assert "collectImportedNotes(account, wantedMarkers, existingNotes)" in script
+    assert "collectImportedNotes(account, wantedMarkers, existingNotes, [])" in script
+    assert "Destination note was edited after import" in script

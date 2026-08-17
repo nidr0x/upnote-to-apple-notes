@@ -23,6 +23,12 @@ def build_jxa_payload(
                 "updated_at": note.updated_at,
                 "tags": note.tags,
                 "marker": note.provenance_marker,
+                "attachment_paths": [
+                    str(export_root / path)
+                    if not path.is_absolute()
+                    else str(path)
+                    for path in note.attachment_paths
+                ],
             }
             for note in manifest.notes
         ]
