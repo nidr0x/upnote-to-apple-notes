@@ -46,7 +46,7 @@ def test_run_extract_writes_manifest_with_source_id_note_1_when_discovery_and_ex
     assert manifest["notes"][0]["source_id"] == 1
 
 
-def test_run_import_dry_run_writes_state_without_calling_the_jxa_launcher_when_manifest_contains_one_note(
+def test_run_import_dry_run_does_not_consume_notes_before_real_import(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     export_root = tmp_path / "export"
@@ -74,22 +74,43 @@ def test_run_import_dry_run_writes_state_without_calling_the_jxa_launcher_when_m
 
     monkeypatch.setattr(cli, "load_manifest", lambda path: manifest)
 
-    def fail_run_jxa_import(script_path: Path, payload: dict[str, object]) -> dict[str, object]:
-        raise AssertionError("run_jxa_import should not be called in dry-run mode")
+    payloads: list[dict[str, object]] = []
 
-    monkeypatch.setattr(cli, "run_jxa_import", fail_run_jxa_import)
+    def fake_run_jxa_import(script_path: Path, payload: dict[str, object]) -> dict[str, object]:
+        payloads.append(payload)
+        return {
+            "notes": [
+                {"source_id": note["source_id"], "status": "created"}
+                for note in payload["notes"]
+            ]
+        }
 
-    result = cli.run_import(
+    monkeypatch.setattr(cli, "run_jxa_import", fake_run_jxa_import)
+
+    dry_run_result = cli.run_import(
         export_root=export_root,
         script_path=script_path,
         state_path=state_path,
         mode="dry-run",
     )
 
-    state = load_state(state_path)
-    assert result == 0
-    assert state.notes["1"].status == "planned"
-    assert state.notes["1"].fingerprint == "fingerprint-1"
+    assert dry_run_result == 0
+    assert not state_path.exists()
+    report = json.loads((export_root / "reports" / "latest-report.json").read_text())
+    assert report["counts"] == {"planned": 1}
+    assert report["notes"][0]["status"] == "planned"
+    assert payloads == []
+
+    import_result = cli.run_import(
+        export_root=export_root,
+        script_path=script_path,
+        state_path=state_path,
+        mode="skip-existing",
+    )
+
+    assert import_result == 0
+    assert payloads[0]["notes"][0]["source_id"] == "1"
+    assert load_state(state_path).notes["1"].status == "created"
 
 
 def test_run_import_non_dry_run_only_marks_notes_reported_by_jxa_as_created(
@@ -279,6 +300,87 @@ def test_run_import_records_destination_ledger_fields(
     assert note_state.session_id == "session-1"
 
 
+def test_failed_partial_creation_remains_eligible_for_session_rollback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    export_root = tmp_path / "export"
+    export_root.mkdir()
+    manifest = {
+        "notes": [
+            {
+                "source_id": "note-1",
+                "title": "Imported",
+                "notebook_path": ["Work"],
+                "tags": [],
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-02T00:00:00Z",
+                "html_path": "notes/note-1.html",
+                "raw_path": "raw/note-1.json",
+                "fingerprint": "fingerprint",
+                "provenance_marker": "upnote:note-1",
+            }
+        ],
+        "counts": {"notes": 1, "notebooks": 1},
+    }
+    monkeypatch.setattr(cli, "load_manifest", lambda path: manifest)
+    monkeypatch.setattr(
+        cli,
+        "run_jxa_import",
+        lambda script_path, payload: {
+            "notes": [
+                {
+                    "source_id": "note-1",
+                    "status": "failed",
+                    "error": "Attachment failed",
+                    "destination_id": "x-coredata://note-1",
+                    "created_by_importer": True,
+                }
+            ]
+        },
+    )
+    state_path = tmp_path / "state.json"
+
+    result = cli.run_import(
+        export_root,
+        tmp_path / "import.js",
+        state_path,
+        "skip-existing",
+        session_id="session-1",
+    )
+
+    state = load_state(state_path)
+    assert result == 1
+    assert state.notes["note-1"].destination_id == "x-coredata://note-1"
+    assert state.notes["note-1"].created_by_importer is True
+
+    monkeypatch.setattr(
+        cli,
+        "run_jxa_import",
+        lambda script_path, payload: {
+            "notes": [
+                {
+                    "source_id": "note-1",
+                    "status": "updated",
+                    "destination_id": "x-coredata://note-1",
+                }
+            ]
+        },
+    )
+    assert cli.run_import(
+        export_root,
+        tmp_path / "import.js",
+        state_path,
+        "resume",
+        session_id="session-1",
+    ) == 0
+    assert load_state(state_path).notes["note-1"].created_by_importer is True
+    assert cli.run_rollback(state_path, tmp_path / "import.js", None, "session-1", False) == {
+        "session_id": "session-1",
+        "planned": 1,
+        "deleted": 0,
+    }
+
+
 def test_run_import_batches_notes_and_preserves_requested_account(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -345,6 +447,7 @@ def test_run_preflight_reports_missing_html_and_assets(monkeypatch: pytest.Monke
         "copied_assets": 12,
         "missing_html": ["missing"],
         "missing_assets": [],
+        "attachment_name_collisions": [],
         "ready": False,
         "capabilities": {
             "workspaces": {"detected": 0, "mapping": "metadata-only"},
@@ -358,6 +461,56 @@ def test_run_preflight_reports_missing_html_and_assets(monkeypatch: pytest.Monke
             },
         },
     }
+
+
+def test_preflight_and_import_reject_duplicate_attachment_names(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    export_root = tmp_path / "export"
+    (export_root / "notes").mkdir(parents=True)
+    (export_root / "notes" / "note-1.html").write_text("<p>note</p>", encoding="utf-8")
+    note = {
+        "source_id": "note-1",
+        "title": "Note with duplicate filenames",
+        "notebook_path": [],
+        "tags": [],
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-02T00:00:00Z",
+        "html_path": "notes/note-1.html",
+        "raw_path": "raw/note-1.json",
+        "fingerprint": "fingerprint-1",
+        "provenance_marker": "upnote:note-1",
+        "attachment_paths": [
+            "assets/images/photo.jpg",
+            "assets/blob_storage/photo.jpg",
+        ],
+    }
+    manifest = {"notes": [note], "counts": {"notes": 1, "notebooks": 0}}
+    monkeypatch.setattr(cli, "load_manifest", lambda path: manifest)
+
+    preflight = cli.run_preflight(export_root)
+
+    assert preflight["attachment_name_collisions"] == [
+        {
+            "source_id": "note-1",
+            "filename": "photo.jpg",
+            "paths": [
+                "assets/blob_storage/photo.jpg",
+                "assets/images/photo.jpg",
+            ],
+        }
+    ]
+    assert preflight["ready"] is False
+
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(cli, "run_jxa_import", lambda script_path, payload: calls.append(payload))
+    result = cli.run_import(
+        export_root, tmp_path / "import.js", tmp_path / "state.json", "skip-existing"
+    )
+
+    assert result == 1
+    assert calls == []
+    assert "photo.jpg" in capsys.readouterr().err
 
 
 def test_run_verify_compares_content_metadata_and_folder(

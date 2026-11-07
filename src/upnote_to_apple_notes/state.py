@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -75,13 +76,27 @@ def load_state(path: Path) -> ImportState:
 
 def save_state(path: Path, state: ImportState) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {"notes": {note_id: asdict(note) for note_id, note in state.notes.items()}},
-            indent=2,
-            sort_keys=True,
-        )
+    payload = json.dumps(
+        {"notes": {note_id: asdict(note) for note_id, note in state.notes.items()}},
+        indent=2,
+        sort_keys=True,
     )
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary.write(payload)
+        temporary_path.replace(path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def mark_note_status(
@@ -96,22 +111,7 @@ def mark_note_status(
     destination_title: str | None = None,
     destination_updated_at: str | None = None,
 ) -> ImportState:
-    notes = {
-        existing_note_id: NoteState(
-            status=existing_note.status,
-            attempts=existing_note.attempts,
-            fingerprint=existing_note.fingerprint,
-            error=existing_note.error,
-            destination_id=existing_note.destination_id,
-            destination_folder=list(existing_note.destination_folder),
-            session_id=existing_note.session_id,
-            created_by_importer=existing_note.created_by_importer,
-            destination_title=existing_note.destination_title,
-            destination_updated_at=existing_note.destination_updated_at,
-        )
-        for existing_note_id, existing_note in state.notes.items()
-    }
-    note = notes.get(note_id, NoteState())
+    note = state.notes.setdefault(note_id, NoteState())
     note.status = status
     note.attempts += 1
     note.error = error
@@ -127,8 +127,7 @@ def mark_note_status(
         note.destination_title = destination_title
     if destination_updated_at is not None:
         note.destination_updated_at = destination_updated_at
-    notes[note_id] = note
-    return ImportState(notes=notes)
+    return state
 
 
 def should_import_note(
@@ -141,12 +140,15 @@ def should_import_note(
     if note is None:
         return True
 
-    if mode == "skip-existing":
+    if mode == "skip-existing" and note.status in COMPLETED_NOTE_STATUSES:
         return False
     if mode == "resume" and note.status in COMPLETED_NOTE_STATUSES:
         return False
     if mode == "update-changed":
-        return note.fingerprint != fingerprint
+        return (
+            note.status not in COMPLETED_NOTE_STATUSES
+            or note.fingerprint != fingerprint
+        )
     return True
 
 

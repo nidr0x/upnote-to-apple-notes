@@ -22,7 +22,9 @@ UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes extract --export-root ./expo
 UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes preflight --export-root ./export
 ```
 
-`preflight` must report `"ready": true`. It also reports copied assets and any local image references it could not resolve.
+`preflight` must return `"ready": true`. It lists copied assets and unresolved local
+image references. It blocks a note if two of its attachments share a filename;
+the importer matches attachments by filename.
 
 If extraction reports that macOS denied access to the database, grant Full Disk Access to Terminal or Codex in System Settings > Privacy & Security, then run the command again.
 
@@ -92,7 +94,8 @@ Apple Notes may place imported attachments at the end of the note rather than pr
 
 ## Update Changed Notes
 
-After exporting again, apply only notes whose title, body, or tags changed:
+After a new export, `update-changed` imports notes whose title, body, tags, or
+destination notebook path changed:
 
 ```bash
 UV_CACHE_DIR=.uv-cache uv run upnote-to-apple-notes import \
