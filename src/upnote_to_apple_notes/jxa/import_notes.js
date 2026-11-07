@@ -39,7 +39,7 @@ function run() {
   }
 
   function parseRequiredDate(value, fieldName, sourceId) {
-    const numeric = typeof value === "number" || (typeof value === "string" && /^-?\\d+(?:\\.\\d+)?$/.test(value));
+    const numeric = typeof value === "number" || (typeof value === "string" && /^-?\d+(?:\.\d+)?$/.test(value));
     const timestamp = numeric ? Number(value) : value;
     const parsed = new Date(numeric && Math.abs(timestamp) < 100000000000 ? timestamp * 1000 : timestamp);
     if (Number.isNaN(parsed.getTime())) {
@@ -58,7 +58,7 @@ function run() {
 
   function normalizedTags(tags) {
     return (Array.isArray(tags) ? tags : [])
-      .map((tag) => String(tag).trim().replace(/^#+/, "").replace(/\\s+/g, "-"))
+      .map((tag) => String(tag).trim().replace(/^#+/, "").replace(/\s+/g, "-"))
       .filter(Boolean)
       .map((tag) => `#${tag}`);
   }
@@ -226,6 +226,7 @@ function run() {
 
   const results = notes.map((note) => {
     const folderPath = Array.isArray(note.folder) ? note.folder : [];
+    let created = null;
     try {
       const body = bodyWithMetadata(readText(note.html_path), note.tags, note.marker);
       const container = resolveContainer(folderPath);
@@ -256,7 +257,7 @@ function run() {
           attachment_names: attachmentNames,
         };
       }
-      const created = notesApp.make({
+      created = notesApp.make({
         new: "note",
         at: container,
         withProperties: { name: note.title, body, creationDate, modificationDate },
@@ -273,13 +274,18 @@ function run() {
         attachment_names: attachmentNames,
       };
     } catch (error) {
-      return {
+      const partialResult = {
         source_id: note.source_id,
         status: "failed",
         marker: note.marker,
         folder_path: folderPath,
         error: String(error),
       };
+      if (created) {
+        partialResult.destination_id = String(created.id());
+        partialResult.created_by_importer = true;
+      }
+      return partialResult;
     }
   });
 

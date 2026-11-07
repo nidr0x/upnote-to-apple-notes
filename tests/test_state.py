@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
+from upnote_to_apple_notes import state as state_module
 from upnote_to_apple_notes.state import (
     ImportState,
     build_import_report,
@@ -8,15 +13,15 @@ from upnote_to_apple_notes.state import (
 )
 
 
-def test_mark_note_status_tracks_latest_status_and_attempts():
+def test_mark_note_status_updates_one_note_in_place():
     state = ImportState()
 
     updated_state = mark_note_status(state, "note-1", "imported")
     updated_state = mark_note_status(updated_state, "note-1", "failed")
 
-    assert "note-1" not in state.notes
-    assert updated_state.notes["note-1"].status == "failed"
-    assert updated_state.notes["note-1"].attempts == 2
+    assert updated_state is state
+    assert state.notes["note-1"].status == "failed"
+    assert state.notes["note-1"].attempts == 2
 
 
 def test_mark_note_status_records_destination_ledger_fields():
@@ -61,6 +66,25 @@ def test_note_state_round_trips_rollback_guard_fields():
     assert note.destination_updated_at == "2026-08-17T10:00:00Z"
 
 
+def test_save_state_preserves_previous_checkpoint_if_replace_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    path = tmp_path / "state.json"
+    path.write_text("previous checkpoint", encoding="utf-8")
+    state = mark_note_status(ImportState(), "note-1", "created")
+
+    def fail_replace(self: Path, target: Path) -> Path:
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="replace failed"):
+        state_module.save_state(path, state)
+
+    assert path.read_text(encoding="utf-8") == "previous checkpoint"
+    assert list(tmp_path.iterdir()) == [path]
+
+
 def test_should_import_note_respects_skip_existing_and_update_changed():
     state = ImportState(
         notes={
@@ -91,6 +115,23 @@ def test_should_import_note_respects_skip_existing_and_update_changed():
         "ghi",
         "resume",
     ) is False
+
+    for status in ("planned", "failed"):
+        incomplete_state = ImportState(
+            notes={
+                "note-incomplete": {
+                    "status": status,
+                    "attempts": 1,
+                    "fingerprint": "abc",
+                }
+            }
+        )
+        assert should_import_note(
+            incomplete_state, "note-incomplete", "abc", "skip-existing"
+        ) is True
+        assert should_import_note(
+            incomplete_state, "note-incomplete", "abc", "update-changed"
+        ) is True
     assert should_import_note(
         ImportState(
             notes={

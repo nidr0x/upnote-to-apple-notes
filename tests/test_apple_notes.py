@@ -102,3 +102,30 @@ def test_jxa_script_uses_a_persistent_plain_text_provenance_marker() -> None:
     assert "<!-- ${escapeHtml(marker)} -->" not in script
     assert "collectImportedNotes(account, wantedMarkers, existingNotes, [])" in script
     assert "Destination note was edited after import" in script
+
+
+def test_jxa_script_uses_valid_regexes_for_timestamps_and_tags() -> None:
+    script = (
+        Path(__file__).parents[1]
+        / "src"
+        / "upnote_to_apple_notes"
+        / "jxa"
+        / "import_notes.js"
+    ).read_text(encoding="utf-8")
+
+    assert r"/^-?\d+(?:\.\d+)?$/" in script
+    assert r'.replace(/\s+/g, "-")' in script
+
+
+def test_jxa_failure_result_tracks_a_note_created_before_a_later_error() -> None:
+    script = (
+        Path(__file__).parents[1]
+        / "src"
+        / "upnote_to_apple_notes"
+        / "jxa"
+        / "import_notes.js"
+    ).read_text(encoding="utf-8")
+
+    assert "let created = null;" in script
+    assert "partialResult.destination_id = String(created.id());" in script
+    assert "partialResult.created_by_importer = true;" in script

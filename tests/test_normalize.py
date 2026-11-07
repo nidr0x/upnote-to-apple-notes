@@ -103,6 +103,31 @@ def test_write_export_tree_writes_nested_notebook_path_and_root_note(tmp_path: P
     assert manifest.notes[1].notebook_path == []
 
 
+def test_note_fingerprint_changes_when_notebook_path_changes(tmp_path: Path) -> None:
+    fingerprints = []
+    for folder_name in ("Personal", "Archive"):
+        manifest = write_export_tree(
+            ExtractionResult(
+                notebooks=[NotebookRecord(source_id="folder-1", name=folder_name)],
+                notes=[
+                    NoteRecord(
+                        source_id="note-1",
+                        notebook_id="folder-1",
+                        title="Same note",
+                        raw_content="<p>same body</p>",
+                        created_at="2024-01-01T00:00:00Z",
+                        updated_at="2024-01-02T00:00:00Z",
+                        tags=["same-tag"],
+                    )
+                ],
+            ),
+            tmp_path / folder_name,
+        )
+        fingerprints.append(manifest.notes[0].fingerprint)
+
+    assert fingerprints[0] != fingerprints[1]
+
+
 def test_write_export_tree_fails_for_broken_notebook_parent(tmp_path: Path) -> None:
     extraction = ExtractionResult(
         notebooks=[

@@ -15,6 +15,8 @@ from .extractor import SourceAccessError, extract_notes
 from .models import ExportManifest, ExportNoteRecord
 from .normalize import load_manifest, write_export_tree
 from .state import (
+    ImportState,
+    NoteState,
     build_import_report,
     load_state,
     mark_note_status,
@@ -71,6 +73,30 @@ def _manifest_note_to_export_note(note: dict[str, object]) -> ExportNoteRecord:
     )
 
 
+def _attachment_name_collisions(notes: list[object]) -> list[dict[str, object]]:
+    collisions: list[dict[str, object]] = []
+    for note in notes:
+        if not isinstance(note, dict):
+            continue
+        paths = note.get("attachment_paths", [])
+        if not isinstance(paths, list):
+            continue
+        paths_by_name: dict[str, set[str]] = {}
+        for path in paths:
+            path_string = str(path)
+            paths_by_name.setdefault(Path(path_string).name, set()).add(path_string)
+        collisions.extend(
+            {
+                "source_id": str(note.get("source_id", "")),
+                "filename": filename,
+                "paths": sorted(asset_paths),
+            }
+            for filename, asset_paths in paths_by_name.items()
+            if len(asset_paths) > 1
+        )
+    return collisions
+
+
 def run_import(
     export_root: Path,
     script_path: Path,
@@ -96,15 +122,26 @@ def run_import(
             mode,
         )
     ]
+    collisions = _attachment_name_collisions(selected_notes)
+    if collisions:
+        summary = ", ".join(
+            f"{item['source_id']}: {item['filename']}" for item in collisions
+        )
+        print(
+            f"Attachment filename collisions prevent import: {summary}", file=sys.stderr
+        )
+        return 1
 
     if mode == "dry-run":
-        for note in selected_notes:
-            note_id = str(note["source_id"])
-            state = mark_note_status(state, note_id, "planned")
-            state.notes[note_id].fingerprint = str(note["fingerprint"])
-        save_state(state_path, state)
-        report = build_import_report(state)
-        _write_latest_report(export_root, report)
+        plan = ImportState(
+            notes={
+                str(note["source_id"]): NoteState(
+                    status="planned", fingerprint=str(note["fingerprint"])
+                )
+                for note in selected_notes
+            }
+        )
+        _write_latest_report(export_root, build_import_report(plan))
         return 0
 
     had_failures = False
@@ -181,7 +218,9 @@ def run_import(
                 destination_id,
                 destination_folder,
                 session_id,
-                True if status == "created" else None,
+                True
+                if status == "created" or outcome.get("created_by_importer") is True
+                else None,
                 destination_title,
                 destination_updated_at,
             )
@@ -267,6 +306,7 @@ def run_preflight(export_root: Path) -> dict[str, object]:
     missing_assets = assets.get("missing_references", [])
     if not isinstance(missing_assets, list):
         missing_assets = []
+    attachment_name_collisions = _attachment_name_collisions(notes)
     return {
         "notes": len(notes),
         "notebooks": manifest.get("counts", {}).get("notebooks", 0),
@@ -274,7 +314,10 @@ def run_preflight(export_root: Path) -> dict[str, object]:
         "copied_assets": assets.get("copied_files", 0),
         "missing_html": missing_html,
         "missing_assets": missing_assets,
-        "ready": not missing_html and not missing_assets,
+        "attachment_name_collisions": attachment_name_collisions,
+        "ready": (
+            not missing_html and not missing_assets and not attachment_name_collisions
+        ),
         "capabilities": {
             "workspaces": {
                 "detected": int(manifest.get("counts", {}).get("workspaces", 0)),

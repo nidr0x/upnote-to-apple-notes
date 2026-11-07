@@ -138,8 +138,18 @@ def write_export_tree(
     for note in extraction.notes:
         html_path = Path("notes") / f"note-{note.source_id}.html"
         raw_path = Path("raw") / f"note-{note.source_id}.json"
+        notebook_path = [] if note.notebook_id is None else notebook_paths[note.notebook_id]
+        notebook = notebook_by_id.get(note.notebook_id) if note.notebook_id else None
+        workspace_id = note.workspace_id or (
+            notebook.workspace_id if notebook is not None else None
+        )
+        workspace_name = workspace_names.get(workspace_id) if workspace_id else None
+        if spaces_as_folders and workspace_name:
+            notebook_path = [workspace_name, *notebook_path]
+
         metadata = {
             "workspace_id": note.workspace_id,
+            "notebook_path": notebook_path,
             "note_links": note.note_links,
             "file_ids": note.file_ids,
             "pinned": note.pinned,
@@ -151,14 +161,6 @@ def write_export_tree(
             note.title, note.raw_content, note.tags, metadata
         )
         provenance_marker = f"upnote:{note.source_id}"
-        notebook_path = [] if note.notebook_id is None else notebook_paths[note.notebook_id]
-        notebook = notebook_by_id.get(note.notebook_id) if note.notebook_id else None
-        workspace_id = note.workspace_id or (
-            notebook.workspace_id if notebook is not None else None
-        )
-        workspace_name = workspace_names.get(workspace_id) if workspace_id else None
-        if spaces_as_folders and workspace_name:
-            notebook_path = [workspace_name, *notebook_path]
 
         html, missing_references, attachment_paths = _rewrite_asset_urls(
             note.raw_content, export_root
